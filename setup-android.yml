@@ -1,0 +1,35 @@
+name: Setup Android Platform
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+
+    - name: Create Android platform
+      run: |
+        echo "🔨 Creating Android platform..."
+        flutter create --platforms=android .
+        echo "✅ Android platform created"
+        ls -la android/
+
+    - name: Commit and push android folder
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add android/
+        git commit -m "Add Android platform folder" || echo "No changes to commit"
+        git push || echo "No changes to push"
