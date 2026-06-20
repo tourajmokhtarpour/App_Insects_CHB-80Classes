@@ -1,0 +1,128 @@
+workflows:
+  android-apk-only:
+    name: Android APK Build
+    max_build_duration: 60
+    environment:
+      flutter: stable
+    scripts:
+      - name: Configure Gradle
+        script: |
+          set -e
+          echo "🔧 Configuring Gradle..."
+          
+          rm -f android/build.gradle.kts android/app/build.gradle.kts android/settings.gradle.kts
+          
+          mkdir -p android/gradle/wrapper
+          cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-all.zip
+          EOF
+          
+          cat > android/settings.gradle << 'EOF'
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
+              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          plugins {
+              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+              id "com.android.application" version "8.9.1" apply false
+              id "org.jetbrains.kotlin.android" version "2.0.21" apply false
+          }
+          include ":app"
+          EOF
+          
+          cat > android/build.gradle << 'EOF'
+          allprojects { repositories { google(); mavenCentral() } }
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "${rootProject.buildDir}/${project.name}"
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          compileOptions {
+                              sourceCompatibility JavaVersion.VERSION_17
+                              targetCompatibility JavaVersion.VERSION_17
+                          }
+                      }
+                  }
+                  project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                      kotlinOptions { jvmTarget = "17" }
+                  }
+              }
+          }
+          tasks.register("clean", Delete) { delete rootProject.buildDir }
+          EOF
+          
+          cat > android/app/build.gradle << 'EOF'
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+              id "dev.flutter.flutter-gradle-plugin"
+          }
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+          }
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+          def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
+          android {
+              namespace "com.example.insect_detector"
+              compileSdk 36
+              ndkVersion flutter.ndkVersion
+              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+              kotlinOptions { jvmTarget = '17' }
+              defaultConfig {
+                  applicationId "com.example.insect_detector"
+                  minSdk 21
+                  targetSdk 36
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+          }
+          flutter { source '../..' }
+          EOF
+          echo "✅ Gradle configured"
+
+      - name: Copy Manifest
+        script: |
+          set -e
+          echo "📋 Copying AndroidManifest..."
+          if [ -f "custom_android/AndroidManifest.xml" ]; then
+            cp custom_android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+            echo "✅ Manifest copied"
+          else
+            echo "⚠️ WARNING: custom_android/AndroidManifest.xml not found"
+          fi
+
+      - name: Build APK
+        script: |
+          set -e
+          echo "🏗️ Building APK..."
+          flutter build apk --release --android-skip-build-dependency-validation
+          echo "✅ APK built successfully"
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+
+    publishing:
+      email:
+        recipients:
+          - mokhtarpourtouraj@gmail.com
